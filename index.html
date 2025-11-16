@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>我的 GitHub Pages 页面</title>
     <style>
-        /* 简单样式，让页面更易看 */
         body {
             font-family: Arial, sans-serif;
             text-align: center;
@@ -19,11 +18,27 @@
             color: #34495e;
             font-size: 18px;
         }
+        .jump-btn {
+            background-color: #2196F3;
+            color: white;
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background-color 0.3s;
+        }
+        .jump-btn:hover {
+            background-color: #1976D2;
+        }
     </style>
 </head>
 <body>
     <h1>🎉 部署成功！</h1>
-    <p>这是我的 GitHub Pages 主页</p>
-    <p>可以在这里修改成你想要的内容～</p>
+    <p>点击下方按钮跳转到同目录的幸运页面～</p>
+    <a href="lucky.html" class="jump-btn">
+        前往幸运页面
+    </a>
 </body>
 </html>
