@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>便签墙</title>
+		<style>
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+				background-image: linear-gradient(0deg, #eee 1px, transparent 0),
+					linear-gradient(90deg, #eee 1px, transparent 0);
+				background-size: 30px 30px;
+				color: #333;
+				min-height: 100dvh;
+				overflow: hidden;
+				transition: background-color 0.3s ease;
+			}
+
+			body.is-mobile {
+				overflow-y: auto;
+			}
+
+			#board {
+				position: relative;
+				width: 100vw;
+				height: 100dvh;
+				overflow: hidden;
+			}
+
+			body.is-mobile #board {
+				height: auto;
+				min-height: 100dvh;
+				padding-bottom: 80px; /* 为移动端底部按钮留出空间 */
+			}
+
+			/* 功能按钮 */
+			.controls {
+				position: fixed;
+				bottom: 20px;
+				right: 20px;
+				display: flex;
+				gap: 12px;
+				z-index: 999999;
+			}
+
+			.control-btn {
+				width: 50px;
+				height: 50px;
+				border-radius: 50%;
+				border: none;
+				background: #fff;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 20px;
+				cursor: pointer;
+				transition: all 0.2s ease;
+			}
+
+			.control-btn:hover {
+				transform: scale(1.1);
+				box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+			}
+
+			.add-btn {
+				background: #42b983;
+				color: white;
+			}
+
+			.clear-btn {
+				background: #ff5252;
+				color: white;
+			}
+
+			/* 便签样式优化 */
+			.card {
+				position: absolute;
+				width: 220px;
+				border-radius: 12px;
+				box-shadow: 0 16px 35px rgba(0, 0, 0, 0.2);
+				background: #fff;
+				border: 1px solid rgba(0, 0, 0, 0.08);
+				overflow: hidden;
+				opacity: 0;
+				transform-origin: center;
+				transition: transform 0.35s ease, opacity 0.35s ease, left 0.35s ease,
+					top 0.35s ease, width 0.35s ease, height 0.35s ease,
+					border-radius 0.35s ease, box-shadow 0.3s ease;
+				cursor: default;
+			}
+
+			.card:hover:not(.dragging):not(.maximized) {
+				transform: translate(var(--translate-x, 0), var(--translate-y, 0)) scale(1.03) rotate(var(--angle, 0deg));
+				box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+				z-index: 300 !important;
+			}
+
+			.card.dragging {
+				transition: none;
+				box-shadow: 0 22px 45px rgba(0, 0, 0, 0.35);
+				z-index: 400 !important;
+			}
+
+			.card.maximized {
+				box-shadow: 0 28px 60px rgba(0, 0, 0, 0.4);
+			}
+
+			.card-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 10px 12px;
+				background: rgba(255, 255, 255, 0.7);
+				cursor: grab;
+				user-select: none;
+				touch-action: none; /* 允许触摸拖拽 */
+			}
+
+			.card-header.dragging {
+				cursor: grabbing;
+			}
+
+			.window-controls {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+
+			.window-controls .control {
+				position: relative;
+				width: 12px;
+				height: 12px;
+				border-radius: 50%;
+				border: 1px solid rgba(0, 0, 0, 0.08);
+				background: #ccc;
+				cursor: pointer;
+				outline: none;
+				padding: 0;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				transition: transform 0.15s ease;
+			}
+
+			.window-controls .control:hover {
+				transform: scale(1.2);
+			}
+
+			.window-controls .control.close {
+				background: #ff5f57;
+				border-color: #e0443e;
+			}
+
+			.window-controls .control.minimize {
+				background: #febb2e;
+				border-color: #dea123;
+			}
+
+			.window-controls .control.maximize {
+				background: #28c840;
+				border-color: #1aab2c;
+			}
+
+			.window-controls .control::after {
+				content: '';
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				opacity: 0;
+				transition: opacity 0.2s ease;
+			}
+
+			.card-header:hover .window-controls .control::after {
+				opacity: 0.8;
+			}
+
+			.window-controls .control.close::after {
+				content: '×';
+				width: auto;
+				height: auto;
+				background: none;
+				font-size: 10px;
+				line-height: 1;
+				font-weight: 700;
+				color: rgba(0, 0, 0, 0.7);
+			}
+
+			.window-controls .control.minimize::after {
+				width: 6px;
+				height: 2px;
+				background: rgba(0, 0, 0, 0.6);
+			}
+
+			.window-controls .control.maximize::after {
+				width: 6px;
+				height: 6px;
+				background: linear-gradient(
+					45deg,
+					rgba(0, 0, 0, 0.6) 0%,
+					rgba(0, 0, 0, 0.6) 45%,
+					transparent 45%,
+					transparent 55%,
+					rgba(0, 0, 0, 0.6) 55%,
+					rgba(0, 0, 0, 0.6) 100%
+				);
+			}
+
+			.card-title {
+				font-size: 13px;
+				font-weight: 600;
+				color: rgba(0, 0, 0, 0.55);
+				padding-left: 10px;
+				flex: 1;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.card-body {
+				padding: 16px;
+				font-size: 16px;
+				line-height: 1.4;
+				font-weight: 600;
+				color: rgba(0, 0, 0, 0.72);
+				min-height: 80px;
+				outline: none; /* 用于编辑时去除焦点边框 */
+			}
+
+			/* 编辑状态样式 */
+			.card.editing .card-body {
+				background: rgba(255, 255, 255, 0.5);
+				border-radius: 6px;
+			}
+
+			/* 模态框样式 */
+			.modal {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background: rgba(0, 0, 0, 0.5);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				z-index: 999999;
+				opacity: 0;
+				pointer-events: none;
+				transition: opacity 0.3s ease;
+			}
+
+			.modal.active {
+				opacity: 1;
+				pointer-events: auto;
+			}
+
+			.modal-content {
+				background: white;
+				padding: 24px;
+				border-radius: 12px;
+				width: 90%;
+				max-width: 500px;
+				box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+				transform: translateY(20px);
+				transition: transform 0.3s ease;
+			}
+
+			.modal.active .modal-content {
+				transform: translateY(0);
+			}
+
+			.modal-title {
+				font-size: 18px;
+				font-weight: 600;
+				margin-bottom: 16px;
+				color: #333;
+			}
+
+			.form-group {
+				margin-bottom: 16px;
+			}
+
+			.form-group label {
+				display: block;
+				margin-bottom: 8px;
+				font-size: 14px;
+				color: #666;
+			}
+
+			.form-control {
+				width: 100%;
+				padding: 10px 12px;
+				border: 1px solid #ddd;
+				border-radius: 6px;
+				font-size: 16px;
+				transition: border-color 0.2s ease;
+			}
+
+			.form-control:focus {
+				border-color: #42b983;
+				outline: none;
+			}
+
+			textarea.form-control {
+				min-height: 120px;
+				resize: vertical;
+				line-height: 1.5;
+			}
+
+			.btn-group {
+				display: flex;
+				justify-content: flex-end;
+				gap: 12px;
+				margin-top: 24px;
+			}
+
+			.btn {
+				padding: 8px 16px;
+				border-radius: 6px;
+				border: none;
+				font-size: 14px;
+				font-weight: 500;
+				cursor: pointer;
+				transition: all 0.2s ease;
+			}
+
+			.btn-primary {
+				background: #42b983;
+				color: white;
+			}
+
+			.btn-primary:hover {
+				background: #359e6d;
+			}
+
+			.btn-secondary {
+				background: #f5f5f5;
+				color: #666;
+			}
+
+			.btn-secondary:hover {
+				background: #e9e9e9;
+			}
+
+			/* 提示消息 */
+			.toast {
+				position: fixed;
+				top: 20px;
+				left: 50%;
+				transform: translateX(-50%) translateY(-100px);
+				background: rgba(0, 0, 0, 0.8);
+				color: white;
+				padding: 10px 20px;
+				border-radius: 6px;
+				font-size: 14px;
+				z-index: 999999;
+				transition: transform 0.3s ease;
+			}
+
+			.toast.active {
+				transform: translateX(-50%) translateY(0);
+			}
+
+			@media (max-width: 768px) {
+				.card {
+					width: 180px;
+					border-radius: 10px;
+				}
+
+				.card-body {
+					padding: 14px;
+					font-size: 14px;
+				}
+
+				.card-title {
+					font-size: 12px;
+				}
+
+				.controls {
+					bottom: 16px;
+					right: 16px;
+				}
+
+				.control-btn {
+					width: 44px;
+					height: 44px;
+					font-size: 18px;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div id="board"></div>
+
+		<!-- 功能按钮 -->
+		<div class="controls">
+			<button class="control-btn add-btn" aria-label="添加便签">+</button>
+			<button class="control-btn clear-btn" aria-label="清空便签">×</button>
+		</div>
+
+		<!-- 添加便签模态框 -->
+		<div class="modal" id="addModal">
+			<div class="modal-content">
+				<div class="modal-title">添加新便签</div>
+				<div class="form-group">
+					<label for="noteTitle">标题</label>
+					<input type="text" id="noteTitle" class="form-control" placeholder="便签标题">
+				</div>
+				<div class="form-group">
+					<label for="noteContent">内容</label>
+					<textarea id="noteContent" class="form-control" placeholder="请输入便签内容..."></textarea>
+				</div>
+				<div class="form-group">
+					<label for="noteColor">颜色</label>
+					<select id="noteColor" class="form-control">
+						<option value="#ffe0e3">浅粉</option>
+						<option value="#c7f0ff">浅蓝</option>
+						<option value="#ffd8a8">浅橙</option>
+						<option value="#d9f2d9">浅绿</option>
+						<option value="#e5d7ff">浅紫</option>
+						<option value="#f9f7d9">浅黄</option>
+						<option value="#d2f0f8">淡青</option>
+						<option value="#ffd4f5">淡粉紫</option>
+					</select>
+				</div>
+				<div class="btn-group">
+					<button class="btn btn-secondary" id="cancelAdd">取消</button>
+					<button class="btn btn-primary" id="confirmAdd">添加</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- 提示消息 -->
+		<div class="toast" id="toast"></div>
+
+		<script>
+			const board = document.getElementById('board')
+			const addBtn = document.querySelector('.add-btn')
+			const clearBtn = document.querySelector('.clear-btn')
+			const addModal = document.getElementById('addModal')
+			const confirmAdd = document.getElementById('confirmAdd')
+			const cancelAdd = document.getElementById('cancelAdd')
+			const noteTitle = document.getElementById('noteTitle')
+			const noteContent = document.getElementById('noteContent')
+			const noteColor = document.getElementById('noteColor')
+			const toast = document.getElementById('toast')
+
+			// 预设消息
+			const messages = [
+				'保持好心情',
+				'多喝水哦',
+				'今天辛苦啦',
+				'早点休息',
+				'记得吃水果',
+				'加油，你可以的',
+				'祝你顺利',
+				'保持微笑呀',
+				'愿所有烦恼都消失',
+				'期待下一次见面',
+				'梦想总会实现',
+				'天气冷了，多穿衣服',
+				'记得给自己放松',
+				'每天都要元气满满',
+				'今天也要好好爱自己',
+				'适当休息一下'
+			]
+
+			const colors = [
+				'#ffe0e3',
+				'#c7f0ff',
+				'#ffd8a8',
+				'#d9f2d9',
+				'#e5d7ff',
+				'#f9f7d9',
+				'#d2f0f8',
+				'#ffd4f5'
+			]
+
+			// 便签状态管理
+			const cardStates = new WeakMap()
+			const MAXIMIZED_LAYER = 1000000
+			let activeMaximizedCard = null
+			let isMobile = window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
+			const maxCards = isMobile ? 120 : 180
+			const initialCardCount = isMobile ? 18 : 30
+			const spawnInterval = isMobile ? 700 : 400
+			let zIndexCursor = 200
+
+			document.body.classList.toggle('is-mobile', isMobile)
+
+			// 工具函数
+			function randomFrom(array) {
+				return array[Math.floor(Math.random() * array.length)]
+			}
+
+			function clamp(value, min, max) {
+				return Math.min(Math.max(value, min), max)
+			}
+
+			// 显示提示消息
+			function showToast(message, duration = 2000) {
+				toast.textContent = message
+				toast.classList.add('active')
+				setTimeout(() => {
+					toast.classList.remove('active')
+				}, duration)
+			}
+
+			// 应用变换
+			function applyTransform(card, state) {
+				const scale = state.scale ?? 1
+				const translateX = state.translateX ?? 0
+				const translateY = state.translateY ?? 0
+				const angle = state.angle ?? 0
+
+				// 为悬停效果设置CSS变量
+				card.style.setProperty('--angle', `${angle}deg`)
+				card.style.setProperty('--translate-x', `${translateX}px`)
+				card.style.setProperty('--translate-y', `${translateY}px`)
+
+				card.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${angle}deg)`
+			}
+
+			// 置于顶层
+			function bringToFront(card) {
+				if (card === activeMaximizedCard) {
+					card.style.zIndex = MAXIMIZED_LAYER
+					return
+				}
+
+				zIndexCursor += 1
+				if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER) {
+					zIndexCursor = MAXIMIZED_LAYER - 1
+				}
+
+				card.style.zIndex = zIndexCursor
+			}
+
+			// 设置便签交互
+			function setupCardInteractions(card) {
+				const header = card.querySelector('.card-header')
+				const closeBtn = card.querySelector('.control.close')
+				const minimizeBtn = card.querySelector('.control.minimize')
+				const maximizeBtn = card.querySelector('.control.maximize')
+				const body = card.querySelector('.card-body')
+
+				// 关闭便签
+				closeBtn.addEventListener('click', event => {
+					event.stopPropagation()
+					if (confirm('确定要删除这个便签吗？')) {
+						closeCard(card)
+					}
+				})
+
+				// 最小化便签
+				minimizeBtn.addEventListener('click', event => {
+					event.stopPropagation()
+					minimizeCard(card)
+				})
+
+				// 最大化便签
+				maximizeBtn.addEventListener('click', event => {
+					event.stopPropagation()
+					toggleMaximize(card)
+				})
+
+				// 开始拖拽（支持触摸和鼠标）
+				header.addEventListener('pointerdown', event => {
+					const control = event.target.closest('.control')
+					if (control) return
+					startDrag(event, card)
+				})
+
+				// 点击置于顶层
+				card.addEventListener('pointerdown', () => {
+					bringToFront(card)
+				})
+
+				// 双击标题栏最大化
+				header.addEventListener('dblclick', event => {
+					if (!event.target.closest('.control')) {
+						toggleMaximize(card)
+					}
+				})
+
+				// 便签内容编辑
+				body.addEventListener('click', (e) => {
+					if (!cardStates.get(card).maximized) {
+						e.stopPropagation()
+						card.classList.add('editing')
+						body.contentEditable = true
+						body.focus()
+					}
+				})
+
+				// 编辑完成保存
+				body.addEventListener('blur', () => {
+					card.classList.remove('editing')
+					body.contentEditable = false
+					const state = cardStates.get(card)
+					if (state) {
+						state.content = body.textContent
+						saveCards() // 保存到本地存储
+					}
+				})
+
+				// 回车保存编辑
+				body.addEventListener('keydown', (e) => {
+					if (e.key === 'Enter' && !e.shiftKey) {
+						e.preventDefault()
+						body.blur()
+					}
+				})
+			}
+
+			// 关闭便签
+			function closeCard(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+
+				if (card === activeMaximizedCard) {
+					activeMaximizedCard = null
+				}
+
+				state.closing = true
+				state.scale = 0.1
+				card.style.opacity = '0'
+				applyTransform(card, state)
+
+				const handleTransitionEnd = event => {
+					if (event.propertyName === 'opacity') {
+						card.removeEventListener('transitionend', handleTransitionEnd)
+						card.remove()
+						saveCards() // 保存到本地存储
+					}
+				}
+
+				card.addEventListener('transitionend', handleTransitionEnd)
+			}
+
+			// 最小化便签
+			function minimizeCard(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+
+				// 最小化动画
+				const runMinimize = () => {
+					state.closing = true
+					bringToFront(card)
+					const bottom = Math.max(window.innerHeight - 24, 0)
+					const targetLeft = clamp(
+						state.left,
+						16,
+						Math.max(window.innerWidth - card.offsetWidth - 16, 16)
+					)
+
+					state.left = targetLeft
+					state.top = bottom
+					state.scale = 0.1
+					state.angle = 0
+					card.style.left = `${targetLeft}px`
+					card.style.top = `${bottom}px`
+					card.style.opacity = '0.35'
+					applyTransform(card, state)
+
+					const handleTransitionEnd = event => {
+						if (event.propertyName === 'transform') {
+							card.removeEventListener('transitionend', handleTransitionEnd)
+							card.remove()
+							saveCards() // 保存到本地存储
+						}
+					}
+
+					card.addEventListener('transitionend', handleTransitionEnd)
+				}
+
+				if (state.maximized) {
+					activeMaximizedCard = null
+					state.maximized = false
+					card.classList.remove('maximized')
+					card.style.borderRadius = '12px'
+					state.left = 0
+					state.top = 0
+					state.scale = 1
+					state.angle = 0
+					applyTransform(card, state)
+
+					requestAnimationFrame(() => {
+						requestAnimationFrame(runMinimize)
+					})
+					return
+				}
+
+				runMinimize()
+			}
+
+			// 切换最大化状态
+			function toggleMaximize(card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing) return
+
+				if (state.maximized) {
+					restoreFromMaximize(card, state)
+				} else {
+					maximizeCard(card, state)
+				}
+			}
+
+			// 最大化便签
+			function maximizeCard(card, state) {
+				state.beforeMaximize = {
+					left: state.left,
+					top: state.top,
+					scale: state.scale ?? 1,
+					width: card.offsetWidth,
+					height: card.offsetHeight,
+					angle: state.angle ?? 0
+				}
+
+				card.classList.add('maximized')
+				card.style.left = '0px'
+				card.style.top = '0px'
+				card.style.width = `${window.innerWidth}px`
+				card.style.height = `${window.innerHeight}px`
+				card.style.borderRadius = '0'
+
+				state.left = 0
+				state.top = 0
+				state.scale = 1
+				state.angle = 0
+				applyTransform(card, state)
+				activeMaximizedCard = card
+				bringToFront(card)
+				state.maximized = true
+			}
+
+			// 从最大化恢复
+			function restoreFromMaximize(card, state) {
+				const previous = state.beforeMaximize
+				if (!previous) return
+
+				card.classList.remove('maximized')
+				card.style.left = `${previous.left}px`
+				card.style.top = `${previous.top}px`
+				card.style.width = `${previous.width}px`
+				card.style.height = `${previous.height}px`
+				card.style.borderRadius = '12px'
+
+				state.left = previous.left
+				state.top = previous.top
+				state.scale = previous.scale ?? 1
+				state.angle = previous.angle ?? state.angle ?? 0
+				applyTransform(card, state)
+				state.maximized = false
+				if (activeMaximizedCard === card) {
+					activeMaximizedCard = null
+				}
+				bringToFront(card)
+				state.lastPosition = { left: state.left, top: state.top }
+
+				setTimeout(() => {
+					if (!state.maximized) {
+						card.style.width = ''
+						card.style.height = ''
+						state.width = card.offsetWidth
+						state.height = card.offsetHeight
+					}
+				}, 360)
+			}
+
+			// 开始拖拽
+			function startDrag(event, card) {
+				const state = cardStates.get(card)
+				if (!state || state.closing || state.maximized) return
+
+				event.preventDefault()
+				bringToFront(card)
+
+				const header = card.querySelector('.card-header')
+				card.classList.add('dragging')
+				header.classList.add('dragging')
+
+				state.dragging = true
+				state.dragOffsetX = event.clientX - state.left
+				state.dragOffsetY = event.clientY - state.top
+
+				let dragFrame = null
+				let pendingLeft = state.left
+				let pendingTop = state.top
+
+				const commitDrag = () => {
+					dragFrame = null
+					const maxLeft = Math.max(window.innerWidth - card.offsetWidth, 0)
+					const maxTop = Math.max(window.innerHeight - card.offsetHeight, 0)
+					state.left = clamp(pendingLeft, -card.offsetWidth * 0.4, maxLeft)
+					state.top = clamp(pendingTop, -card.offsetHeight * 0.4, maxTop)
+					card.style.left = `${state.left}px`
+					card.style.top = `${state.top}px`
+				}
+
+				const handlePointerMove = moveEvent => {
+					if (!state.dragging) return
+
+					pendingLeft = moveEvent.clientX - state.dragOffsetX
+					pendingTop = moveEvent.clientY - state.dragOffsetY
+					if (dragFrame === null) {
+						dragFrame = requestAnimationFrame(commitDrag)
+					}
+				}
+
+				const handlePointerUp = () => {
+					state.dragging = false
+					state.lastPosition = { left: state.left, top: state.top }
+					card.classList.remove('dragging')
+					header.classList.remove('dragging')
+					if (dragFrame !== null) {
+						cancelAnimationFrame(dragFrame)
+						commitDrag()
+					}
+					document.removeEventListener('pointermove', handlePointerMove)
+					document.removeEventListener('pointerup', handlePointerUp)
+					saveCards() // 保存到本地存储
+				}
+
+				document.addEventListener('pointermove', handlePointerMove)
+				document.addEventListener('pointerup', handlePointerUp)
+			}
+
+			// 创建便签（支持自定义内容）
+			function createCard(customData = null) {
+				// 如果达到最大数量限制，不创建新便签
+				if (board.children.length >= maxCards) {
+					showToast('便签数量已达上限')
+					return
+				}
+
+				const card = document.createElement('div')
+				card.className = 'card'
+
+				// 自定义数据或随机数据
+				const data = customData || {
+					color: randomFrom(colors),
+					title: '温馨提示',
+					content: randomFrom(messages)
+				}
+
+				const angleRange = isMobile ? 6 : 10
+				const angle = (Math.random() - 0.5) * angleRange
+				const cardWidth = isMobile ? 180 : 220
+				const cardHeight = isMobile ? 130 : 140
+				const horizontalMargin = isMobile ? 12 : 16
+				const verticalMargin = isMobile ? 12 : 20
+				const left =
+					horizontalMargin +
+					Math.random() *
+						Math.max(window.innerWidth - cardWidth - horizontalMargin * 2, 0)
+				const top =
+					verticalMargin +
+					Math.random() *
+						Math.max(window.innerHeight - cardHeight - verticalMargin * 2, 0)
+
+				card.style.background = data.color
+				card.style.left = `${left}px`
+				card.style.top = `${top}px`
+				if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER - 2) {
+					zIndexCursor = MAXIMIZED_LAYER - 2
+				}
+				card.style.zIndex = ++zIndexCursor
+
+				card.innerHTML = `
+					<div class="card-header">
+						<div class="window-controls">
+							<button class="control close" type="button" aria-label="关闭"></button>
+							<button class="control minimize" type="button" aria-label="最小化"></button>
+							<button class="control maximize" type="button" aria-label="最大化"></button>
+						</div>
+						<div class="card-title">${data.title}</div>
+					</div>
+					<div class="card-body">${data.content}</div>
+				`
+
+				const state = {
+					angle,
+					scale: isMobile ? 0.85 : 0.7,
+					translateX: 0,
+					translateY: 0,
+					left,
+					top,
+					maximized: false,
+					closing: false,
+					lastPosition: { left, top },
+					title: data.title,
+					content: data.content,
+					color: data.color
+				}
+
+				cardStates.set(card, state)
+				applyTransform(card, state)
+				board.appendChild(card)
+
+				state.width = card.offsetWidth
+				state.height = card.offsetHeight
+
+				// 入场动画
+				requestAnimationFrame(() => {
+					state.scale = 1
+					applyTransform(card, state)
+					card.style.opacity = '1'
+				})
+
+				setupCardInteractions(card)
+
+				// 超过最大数量时移除最旧的
+				if (board.children.length > maxCards) {
+					const oldest = board.firstElementChild
+					if (oldest && oldest !== card) {
+						oldest.remove()
+					}
+				}
+
+				// 保存到本地存储（如果是自定义创建的）
+				if (customData) {
+					saveCards()
+				}
+			}
+
+			// 保存便签到本地存储
+			function saveCards() {
+				const cardsData = []
+				document.querySelectorAll('.card').forEach(card => {
+					const state = cardStates.get(card)
+					if (state && !state.closing) {
+						cardsData.push({
+							title: state.title,
+							content: state.content,
+							color: state.color,
+							left: state.left,
+							top: state.top,
+							angle: state.angle,
+							scale: state.scale
+						})
+					}
+				})
+				localStorage.setItem('stickyNotes', JSON.stringify(cardsData))
+			}
+
+			// 从本地存储加载便签
+			function loadCards() {
+				const savedCards = localStorage.getItem('stickyNotes')
+				if (savedCards) {
+					try {
+						const cardsData = JSON.parse(savedCards)
+						// 清空现有便签（除了初始加载的）
+						if (board.children.length <= initialCardCount) {
+							board.innerHTML = ''
+						}
+						// 加载保存的便签
+						cardsData.forEach((data, index) => {
+							setTimeout(() => {
+								createCard(data)
+							}, index * 50)
+						})
+						return true
+					} catch (e) {
+						console.error('加载便签失败:', e)
+						return false
+					}
+				}
+				return false
+			}
+
+			// 清空所有便签
+			function clearAllCards() {
+				if (confirm('确定要清空所有便签吗？此操作不可恢复！')) {
+					const cards = document.querySelectorAll('.card')
+					cards.forEach((card, index) => {
+						setTimeout(() => {
+							const state = cardStates.get(card)
+							if (state) {
+								state.closing = true
+								state.scale = 0.1
+								card.style.opacity = '0'
+								applyTransform(card, state)
+
+								setTimeout(() => card.remove(), 350)
+							}
+						}, index * 50)
+					})
+					localStorage.removeItem('stickyNotes')
+					showToast('已清空所有便签')
+				}
+			}
+
+			// 事件监听
+			addBtn.addEventListener('click', () => {
+				// 重置表单
+				noteTitle.value = ''
+				noteContent.value = ''
+				noteColor.value = randomFrom(colors)
+				// 显示模态框
+				addModal.classList.add('active')
+				// 自动聚焦
+				setTimeout(() => noteTitle.focus(), 300)
+			})
+
+			cancelAdd.addEventListener('click', () => {
+				addModal.classList.remove('active')
+			})
+
+			confirmAdd.addEventListener('click', () => {
+				const title = noteTitle.value.trim() || '我的便签'
+				const content = noteContent.value.trim() || '点击编辑内容...'
+				const color = noteColor.value
+
+				if (content) {
+					createCard({ title, content, color })
+					addModal.classList.remove('active')
+					showToast('便签添加成功')
+				} else {
+					showToast('请输入便签内容')
+				}
+			})
+
+			clearBtn.addEventListener('click', clearAllCards)
+
+			// 点击模态框外部关闭
+			addModal.addEventListener('click', (e) => {
+				if (e.target === addModal) {
+					addModal.classList.remove('active')
+				}
+			})
+
+			// 键盘事件：ESC关闭模态框
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' && addModal.classList.contains('active')) {
+					addModal.classList.remove('active')
+				}
+			})
+
+			// 初始化
+			window.addEventListener('DOMContentLoaded', () => {
+				// 尝试从本地存储加载
+				const loaded = loadCards()
+
+				// 如果没有加载到保存的便签，创建初始便签
+				if (!loaded) {
+					for (let i = 0; i < initialCardCount; i++) {
+						setTimeout(createCard, i * (isMobile ? 60 : 40))
+					}
+				}
+
+				// 定时创建新便签
+				setInterval(() => {
+					// 只有当便签数量少于最大值的80%时才自动创建
+					if (board.children.length < maxCards * 0.8) {
+						createCard()
+					}
+				}, spawnInterval)
+			})
+
+			// 窗口大小改变时
+			window.addEventListener('resize', () => {
+				isMobile = window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
+				document.body.classList.toggle('is-mobile', isMobile)
+
+				// 更新最大化卡片的尺寸
+				document.querySelectorAll('.card.maximized').forEach(card => {
+					card.style.width = `${window.innerWidth}px`
+					card.style.height = `${window.innerHeight}px`
+				})
+			})
+		</script>
+	</body>
+</html>
